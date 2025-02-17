@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -17,7 +18,15 @@ var (
 	cacheMutex = &sync.Mutex{}
 )
 
-func ValidateAccessToken(accessToken string) (bool, error) {
+func ValidateAccessToken(authHeader string, scopes []string, audience string) (bool, error) {
+
+
+	tokenTypeAccessToken := strings.Split(authHeader, " ")
+	if len(tokenTypeAccessToken) != 2 {
+		return false, errors.New("invalid authorization header format")
+	}
+	tokenType, accessToken := tokenTypeAccessToken[0], tokenTypeAccessToken[1]
+
 	token, _, err := new(jwt.Parser).ParseUnverified(accessToken, jwt.MapClaims{})
 	if err != nil {
 		return false, err
@@ -29,6 +38,19 @@ func ValidateAccessToken(accessToken string) (bool, error) {
 	}
 
 	issuer, err := validateIssuer(claims)
+
+	if !validateTokenType(claims,tokenType) {
+		return false, errors.New("invalid token type")
+	}
+
+	if !validateScopes(claims, scopes) {
+		return false, errors.New("invalid token scopes")
+	}
+
+	if !validateAudience(claims, audience) {
+		return false, errors.New("invalid token audience")
+	}
+
 
 	if err != nil {
 		return false, err
@@ -47,6 +69,25 @@ func ValidateAccessToken(accessToken string) (bool, error) {
 
 func validateTokenWithKeys(accessToken string, keys []interface{}, issuer string) (bool, error) {
 	return validateTokenWithKeysRecursive(accessToken, keys, issuer, false)
+}
+
+func validateAudience(claims jwt.MapClaims, audience string) bool {
+	if aud, ok := claims["aud"].(string); ok {
+		return strings.EqualFold(aud, audience)
+	}
+	return false
+}
+
+func validateScopes(claims jwt.MapClaims, requiredScopes []string) bool {
+	if scopes, ok := claims["scope"].(string); ok {
+		for _, requiredScope := range requiredScopes {
+			if !strings.Contains(scopes, requiredScope) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 func validateTokenWithKeysRecursive(accessToken string, keys []interface{}, issuer string, base bool) (bool, error) {
@@ -78,6 +119,10 @@ func validateIssuer(claims jwt.MapClaims) (string, error) {
 		return issuer, nil
 	}
 	return "", errors.New("issuer not found in token")
+}
+
+func validateTokenType(claims jwt.MapClaims,tokenType string) bool {
+	return strings.EqualFold(claims["token_type"].(string), tokenType)
 }
 
 func getKeys(issuer string) (([]interface{}), error) {
