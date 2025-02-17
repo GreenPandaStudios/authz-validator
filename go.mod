@@ -1,4 +1,4 @@
-module authz-validator
+module github.com/GreenPandaStudios/authz-validator
 
 go 1.21.6
 
